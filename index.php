@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TRIANIME - Anime Streaming</title>
+    <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -20,33 +21,20 @@
             }
         }
     </script>
+    <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        /* Custom Scrollbar */
-        ::-webkit-scrollbar {
-            width: 8px;
-        }
-        ::-webkit-scrollbar-track {
-            background: #0a0a0a;
-        }
-        ::-webkit-scrollbar-thumb {
-            background: #1e1e1e;
-            border-radius: 4px;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-            background: #ffbade;
-        }
-        /* Fade-in Animation */
-        .fade-in {
-            animation: fadeIn 0.4s ease-in-out;
-        }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #0a0a0a; }
+        ::-webkit-scrollbar-thumb { background: #1e1e1e; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #ffbade; }
+        .fade-in { animation: fadeIn 0.4s ease-in-out; }
         @keyframes fadeIn {
             from { opacity: 0; transform: translateY(6px); }
             to { opacity: 1; transform: translateY(0); }
         }
-        /* Glassmorphism */
         .glass-nav {
-            background: rgba(18, 18, 18, 0.75);
+            background: rgba(18, 18, 18, 0.85);
             backdrop-filter: blur(12px);
             -webkit-backdrop-filter: blur(12px);
             border-bottom: 1px solid rgba(255, 255, 255, 0.05);
@@ -55,6 +43,7 @@
 </head>
 <body class="bg-darkBg text-gray-200 font-sans min-h-screen flex flex-col justify-between selection:bg-accentPink selection:text-black">
 
+    <!-- Navbar -->
     <nav class="glass-nav fixed top-0 w-full z-50 transition-all duration-300">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex items-center justify-between h-16">
@@ -65,6 +54,7 @@
                 <div class="hidden md:flex items-center space-x-8">
                     <button onclick="navigateTo('home')" class="hover:text-accentPink font-medium transition">Home</button>
                     <button onclick="navigateTo('browse')" class="hover:text-accentPink font-medium transition">Browse</button>
+                    <button onclick="navigateTo('library')" class="hover:text-accentPink font-medium transition">My Library</button>
                 </div>
 
                 <div class="hidden md:flex items-center relative w-64">
@@ -82,9 +72,11 @@
             </div>
         </div>
 
+        <!-- Mobile Menu -->
         <div id="mobileMenu" class="hidden md:hidden bg-cardBg border-b border-gray-800 px-4 pt-2 pb-4 space-y-3">
             <button onclick="navigateTo('home'); toggleMobileMenu()" class="block w-full text-left py-2 hover:text-accentPink font-medium">Home</button>
             <button onclick="navigateTo('browse'); toggleMobileMenu()" class="block w-full text-left py-2 hover:text-accentPink font-medium">Browse</button>
+            <button onclick="navigateTo('library'); toggleMobileMenu()" class="block w-full text-left py-2 hover:text-accentPink font-medium">My Library</button>
             <div class="relative w-full pt-2">
                 <input type="text" id="mobileSearchInput" onkeydown="handleSearch(event, true)" placeholder="Search anime..." class="w-full bg-hoverBg text-sm text-white rounded-full py-2 pl-4 pr-10 focus:outline-none focus:ring-2 focus:ring-accentPink border border-gray-800">
                 <button onclick="triggerSearch(true)" class="absolute right-3 top-4 text-gray-400 hover:text-accentPink">
@@ -94,32 +86,36 @@
         </div>
     </nav>
 
+    <!-- Main Dynamic Content Wrapper -->
     <main id="app" class="pt-20 pb-12 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full flex-grow">
-        </main>
+    </main>
 
+    <!-- Footer -->
     <footer class="bg-cardBg border-t border-gray-800/60 py-6 text-center text-xs text-gray-500">
-        <p>&copy; 2026 TRIANIME. Powered by Jikan v4 API.</p>
+        <p>&copy; 2026 TRIANIME. Powered by Jikan v4 & Public Embed Engine.</p>
     </footer>
 
     <script>
-        // --- CONSTANTS ---
+        // --- CONSTANTS & APIS ---
         const JIKAN_BASE = 'https://api.jikan.moe/v4';
-        const HARDCODED_GENRES = [
-            { id: 1, name: 'Action' },
-            { id: 2, name: 'Adventure' },
-            { id: 4, name: 'Comedy' },
-            { id: 8, name: 'Drama' },
-            { id: 10, name: 'Fantasy' },
-            { id: 62, name: 'Isekai' },
-            { id: 22, name: 'Romance' },
-            { id: 24, name: 'Sci-Fi' },
-            { id: 36, name: 'Slice of Life' },
-            { id: 37, name: 'Supernatural' }
+        const CONSUMET_BASE = 'https://api.consumet.org/anime/gogoanime'; // Open Source Scraper Endpoint
+        const EMBED_PROVIDERS = [
+            { name: 'Server 1 (Auto-Embed)', url: (id, ep) => `https://vidsrc.to/embed/anime/${id}/${ep}` },
+            { name: 'Server 2 (2Embed)', url: (id, ep) => `https://2embed.org/embed/anime/${id}/${ep}` },
+            { name: 'Trailer (YouTube)', url: (trailerUrl) => trailerUrl }
         ];
 
-        // --- STATE MANAGEMENT ---
+        const HARDCODED_GENRES = [
+            { id: 1, name: 'Action' }, { id: 2, name: 'Adventure' },
+            { id: 4, name: 'Comedy' }, { id: 8, name: 'Drama' },
+            { id: 10, name: 'Fantasy' }, { id: 62, name: 'Isekai' },
+            { id: 22, name: 'Romance' }, { id: 24, name: 'Sci-Fi' },
+            { id: 36, name: 'Slice of Life' }, { id: 37, name: 'Supernatural' }
+        ];
+
+        // --- STATE & LOCAL STORAGE ---
         const state = {
-            view: 'home', // 'home', 'browse', 'watch', 'search'
+            view: 'home',
             heroAnime: [],
             heroIndex: 0,
             heroTimer: null,
@@ -130,14 +126,15 @@
             browseFilter: { type: 'top', genre: null },
             watchAnime: null,
             selectedEpisode: 1,
+            selectedServer: 0,
             searchResults: [],
-            searchQuery: ''
+            searchQuery: '',
+            favorites: JSON.parse(localStorage.getItem('tri_favs') || '[]'),
+            history: JSON.parse(localStorage.getItem('tri_history') || '[]')
         };
 
-        // Delay Helper to avoid Rate Limits (429)
         const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-        // API Fetch Wrapper
         async function fetchAPI(endpoint) {
             try {
                 const res = await fetch(`${JIKAN_BASE}${endpoint}`);
@@ -150,34 +147,30 @@
             }
         }
 
-        // --- INITIALIZATION (Sequential Requests to Prevent 429 Errors) ---
+        // --- INITIALIZATION ---
         async function init() {
             renderLoading();
 
-            // Fetch Hero/Top Airing Data
             let topAiring = await fetchAPI('/top/anime?filter=airing&limit=5');
-            await delay(800); // 800ms artificial delay
+            await delay(800);
 
-            // Fallback strategy if Season Now / Top Airing fails
             if (!topAiring || topAiring.length === 0) {
                 topAiring = await fetchAPI('/top/anime?page=2');
                 await delay(800);
             }
             state.heroAnime = topAiring || [];
 
-            // Fetch Currently Airing (Latest)
             const latest = await fetchAPI('/seasons/now?limit=12');
             await delay(800);
             state.latestAiring = latest || state.heroAnime;
 
-            // Fetch Upcoming
             const upcoming = await fetchAPI('/seasons/upcoming?limit=6');
             state.upcoming = upcoming || [];
 
             navigateTo('home');
         }
 
-        // --- ROUTER & VIEW RENDERER ---
+        // --- ROUTER ---
         function navigateTo(view, params = {}) {
             state.view = view;
             clearInterval(state.heroTimer);
@@ -186,11 +179,11 @@
             else if (view === 'browse') loadBrowseData(params.page || 1, params.filter || state.browseFilter);
             else if (view === 'watch') loadWatchPage(params.id);
             else if (view === 'search') loadSearchResults(params.query);
+            else if (view === 'library') renderLibrary();
 
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
 
-        // --- UI LOADING STATE ---
         function renderLoading() {
             document.getElementById('app').innerHTML = `
                 <div class="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
@@ -205,8 +198,7 @@
             const app = document.getElementById('app');
             app.innerHTML = `
                 <div class="fade-in space-y-12">
-                    <div id="heroSection" class="relative w-full h-[400px] md:h-[480px] rounded-2xl overflow-hidden shadow-2xl bg-hoverBg border border-gray-800">
-                        </div>
+                    <div id="heroSection" class="relative w-full h-[400px] md:h-[480px] rounded-2xl overflow-hidden shadow-2xl bg-hoverBg border border-gray-800"></div>
 
                     <div class="grid grid-cols-1 lg:grid-cols-4 gap-8">
                         <div class="lg:col-span-3 space-y-6">
@@ -250,14 +242,11 @@
                     </div>
                 </div>
             `;
-
             setupHeroSlider();
         }
 
-        // --- HERO SLIDER CONTROL ---
         function setupHeroSlider() {
             if (!state.heroAnime.length) return;
-            
             const updateHero = () => {
                 const anime = state.heroAnime[state.heroIndex];
                 const heroEl = document.getElementById('heroSection');
@@ -278,10 +267,8 @@
                         </div>
                     </div>
                 `;
-
                 state.heroIndex = (state.heroIndex + 1) % state.heroAnime.length;
             };
-
             updateHero();
             state.heroTimer = setInterval(updateHero, 5000);
         }
@@ -334,58 +321,80 @@
             renderLoading();
             const data = await fetchAPI(`/anime/${animeId}/full`);
             if (!data) {
-                document.getElementById('app').innerHTML = `<div class="text-center py-12 text-red-400">Failed to load anime details. Please try again.</div>`;
+                document.getElementById('app').innerHTML = `<div class="text-center py-12 text-red-400">Failed to load anime details.</div>`;
                 return;
             }
             state.watchAnime = data;
             state.selectedEpisode = 1;
+            state.selectedServer = 0;
 
+            saveToHistory(data);
             renderWatchPage();
         }
 
         function renderWatchPage() {
             const anime = state.watchAnime;
-            const totalEpisodes = anime.episodes || 12; // Fallback total episodes
-            const trailerEmbed = anime.trailer?.embed_url;
+            const totalEpisodes = anime.episodes || 12;
+            const isFav = state.favorites.some(f => f.mal_id === anime.mal_id);
+
+            let iframeSrc = '';
+            if (state.selectedServer === 0) {
+                iframeSrc = EMBED_PROVIDERS[0].url(anime.mal_id, state.selectedEpisode);
+            } else if (state.selectedServer === 1) {
+                iframeSrc = EMBED_PROVIDERS[1].url(anime.mal_id, state.selectedEpisode);
+            } else {
+                iframeSrc = anime.trailer?.embed_url || EMBED_PROVIDERS[0].url(anime.mal_id, state.selectedEpisode);
+            }
 
             const app = document.getElementById('app');
             app.innerHTML = `
                 <div class="fade-in space-y-8">
                     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        <!-- Video Player Area -->
                         <div class="lg:col-span-2 space-y-4">
                             <div class="relative w-full aspect-video bg-black rounded-xl overflow-hidden border border-gray-800 shadow-xl">
-                                ${
-                                    state.selectedEpisode === 1 && trailerEmbed
-                                    ? `<iframe src="${trailerEmbed}?autoplay=1" class="w-full h-full border-0" allowfullscreen></iframe>`
-                                    : `<video controls autoplay class="w-full h-full object-cover">
-                                        <source src="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4" type="video/mp4">
-                                        Your browser does not support video playback.
-                                       </video>`
-                                }
+                                <iframe src="${iframeSrc}" class="w-full h-full border-0" allowfullscreen allow="autoplay"></iframe>
                             </div>
-                            <div>
-                                <h1 class="text-2xl font-bold text-white">${anime.title}</h1>
-                                <p class="text-sm text-accentPink mt-1">Playing Episode ${state.selectedEpisode}</p>
+                            
+                            <!-- Controls / Server Switcher -->
+                            <div class="flex flex-wrap items-center justify-between gap-4 bg-cardBg p-4 rounded-xl border border-gray-800">
+                                <div>
+                                    <h1 class="text-xl font-bold text-white">${anime.title}</h1>
+                                    <p class="text-xs text-accentPink mt-0.5">Playing Episode ${state.selectedEpisode}</p>
+                                </div>
+                                <div class="flex items-center space-x-2">
+                                    <span class="text-xs text-gray-400 font-semibold mr-1">Server:</span>
+                                    ${EMBED_PROVIDERS.map((s, idx) => `
+                                        <button onclick="changeServer(${idx})" class="text-xs px-3 py-1.5 rounded-lg border ${state.selectedServer === idx ? 'bg-accentPink text-black font-bold border-accentPink' : 'bg-hoverBg border-gray-800 text-gray-300 hover:text-accentPink'}">
+                                            ${s.name.split(' ')[0]} ${idx+1}
+                                        </button>
+                                    `).join('')}
+                                    <button onclick="toggleFavorite()" class="ml-2 text-sm px-3 py-1.5 rounded-lg border ${isFav ? 'bg-red-500 text-white border-red-500' : 'bg-hoverBg text-gray-300 border-gray-800'}">
+                                        <i class="fa-${isFav ? 'solid' : 'regular'} fa-heart"></i>
+                                    </button>
+                                </div>
                             </div>
                         </div>
 
-                        <div class="bg-cardBg border border-gray-800 rounded-xl p-4 flex flex-col h-[400px] lg:h-auto">
-                            <h3 class="text-md font-bold mb-3 border-l-4 border-accentPink pl-3">Episodes</h3>
+                        <!-- Episode Selector -->
+                        <div class="bg-cardBg border border-gray-800 rounded-xl p-4 flex flex-col h-[420px] lg:h-auto">
+                            <h3 class="text-md font-bold mb-3 border-l-4 border-accentPink pl-3">Episodes (${totalEpisodes})</h3>
                             <div class="overflow-y-auto flex-grow space-y-2 pr-1">
-                                ${Array.from({ length: Math.min(totalEpisodes, 100) }, (_, i) => i + 1).map(ep => `
+                                ${Array.from({ length: Math.min(totalEpisodes, 150) }, (_, i) => i + 1).map(ep => `
                                     <button onclick="changeEpisode(${ep})" class="w-full text-left px-3 py-2 rounded-lg text-sm flex items-center justify-between ${state.selectedEpisode === ep ? 'bg-accentPink text-black font-bold' : 'bg-hoverBg hover:text-accentPink transition'}">
                                         <span>Episode ${ep}</span>
-                                        ${ep === 1 && trailerEmbed ? '<span class="text-[10px] uppercase border border-black/20 px-1.5 py-0.5 rounded">Trailer</span>' : ''}
+                                        <i class="fa-solid fa-circle-play text-xs opacity-70"></i>
                                     </button>
                                 `).join('')}
                             </div>
                         </div>
                     </div>
 
+                    <!-- Metadata -->
                     <div class="bg-cardBg border border-gray-800 rounded-xl p-6 grid grid-cols-1 md:grid-cols-4 gap-6">
                         <img src="${anime.images.jpg.large_image_url}" class="w-full rounded-lg object-cover shadow-md">
                         <div class="md:col-span-3 space-y-4">
-                            <div class="flex flex-wrap gap-4 text-xs">
+                            <div class="flex flex-wrap gap-3 text-xs">
                                 <span class="bg-hoverBg border border-gray-700 px-3 py-1 rounded-full"><i class="fa-solid fa-star text-yellow-400 mr-1"></i> ${anime.score || 'N/A'}</span>
                                 <span class="bg-hoverBg border border-gray-700 px-3 py-1 rounded-full">Rank #${anime.rank || 'N/A'}</span>
                                 <span class="bg-hoverBg border border-gray-700 px-3 py-1 rounded-full">${anime.type || 'TV'}</span>
@@ -395,8 +404,6 @@
                             <div class="grid grid-cols-2 text-xs text-gray-400 gap-2 border-t border-gray-800 pt-4">
                                 <div><strong class="text-gray-200">Studios:</strong> ${anime.studios?.map(s => s.name).join(', ') || 'N/A'}</div>
                                 <div><strong class="text-gray-200">Aired:</strong> ${anime.aired?.string || 'N/A'}</div>
-                                <div><strong class="text-gray-200">Rating:</strong> ${anime.rating || 'N/A'}</div>
-                                <div><strong class="text-gray-200">Duration:</strong> ${anime.duration || 'N/A'}</div>
                             </div>
                         </div>
                     </div>
@@ -407,6 +414,68 @@
         function changeEpisode(ep) {
             state.selectedEpisode = ep;
             renderWatchPage();
+        }
+
+        function changeServer(idx) {
+            state.selectedServer = idx;
+            renderWatchPage();
+        }
+
+        // --- LOCAL STORAGE HELPERS ---
+        function toggleFavorite() {
+            const anime = state.watchAnime;
+            const index = state.favorites.findIndex(f => f.mal_id === anime.mal_id);
+            if (index > -1) {
+                state.favorites.splice(index, 1);
+            } else {
+                state.favorites.push({
+                    mal_id: anime.mal_id,
+                    title: anime.title,
+                    images: anime.images,
+                    score: anime.score,
+                    type: anime.type
+                });
+            }
+            localStorage.setItem('tri_favs', JSON.stringify(state.favorites));
+            renderWatchPage();
+        }
+
+        function saveToHistory(anime) {
+            const filtered = state.history.filter(h => h.mal_id !== anime.mal_id);
+            filtered.unshift({
+                mal_id: anime.mal_id,
+                title: anime.title,
+                images: anime.images,
+                score: anime.score,
+                type: anime.type,
+                timestamp: new Date().toLocaleDateString()
+            });
+            state.history = filtered.slice(0, 24); // store last 24
+            localStorage.setItem('tri_history', JSON.stringify(state.history));
+        }
+
+        // --- LIBRARY VIEW (FAVORITES & HISTORY) ---
+        function renderLibrary() {
+            const app = document.getElementById('app');
+            app.innerHTML = `
+                <div class="fade-in space-y-10">
+                    <div class="space-y-4">
+                        <h2 class="text-xl font-bold border-l-4 border-accentPink pl-3">My Favorites (${state.favorites.length})</h2>
+                        ${state.favorites.length === 0 ? '<p class="text-gray-500 text-sm">No saved favorites yet.</p>' : ''}
+                        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                            ${state.favorites.map(anime => renderAnimeCard(anime)).join('')}
+                        </div>
+                    </div>
+
+                    <div class="space-y-4 border-t border-gray-800 pt-8">
+                        <h2 class="text-xl font-bold border-l-4 border-accentPink pl-3">Watch History</h2>
+                        ${state.history.length === 0 ? '<p class="text-gray-500 text-sm">No watch history available.</p>' : ''}
+                        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                            ${state.history.map(anime => renderAnimeCard(anime)).join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
         }
 
         // --- SEARCH VIEW ---
@@ -433,25 +502,23 @@
             `;
         }
 
-        // --- REUSABLE ANIME CARD COMPONENT ---
         function renderAnimeCard(anime) {
             return `
                 <div onclick="navigateTo('watch', { id: ${anime.mal_id} })" class="group relative bg-cardBg rounded-xl overflow-hidden border border-gray-800/80 cursor-pointer hover:border-accentPink/50 transition duration-300 flex flex-col justify-between">
                     <div class="relative aspect-[3/4] overflow-hidden">
-                        <img src="${anime.images.jpg.large_image_url || anime.images.jpg.image_url}" class="w-full h-full object-cover group-hover:scale-105 transition duration-300">
+                        <img src="${anime.images?.jpg?.large_image_url || anime.images?.jpg?.image_url}" class="w-full h-full object-cover group-hover:scale-105 transition duration-300">
                         <div class="absolute top-2 right-2 bg-black/70 backdrop-blur-md px-2 py-0.5 rounded text-[10px] font-bold text-yellow-400">
                             ★ ${anime.score || 'N/A'}
                         </div>
                     </div>
                     <div class="p-3">
                         <h3 class="text-xs font-bold text-white truncate group-hover:text-accentPink transition">${anime.title}</h3>
-                        <p class="text-[10px] text-gray-400 mt-1">${anime.type || 'TV'} • ${anime.episodes ? anime.episodes + ' eps' : 'Unknown'}</p>
+                        <p class="text-[10px] text-gray-400 mt-1">${anime.type || 'TV'}</p>
                     </div>
                 </div>
             `;
         }
 
-        // --- SEARCH HANDLERS ---
         function handleSearch(e, isMobile = false) {
             if (e.key === 'Enter') triggerSearch(isMobile);
         }
@@ -463,14 +530,10 @@
         }
 
         function toggleMobileMenu() {
-            const menu = document.getElementById('mobileMenu');
-            menu.classList.toggle('hidden');
+            document.getElementById('mobileMenu').classList.toggle('hidden');
         }
 
-        // Mobile Menu Toggle Event Listener
         document.getElementById('mobileMenuBtn').addEventListener('click', toggleMobileMenu);
-
-        // Run application on load
         window.addEventListener('DOMContentLoaded', init);
     </script>
 </body>
