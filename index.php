@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TRIANIME - Anime Streaming</title>
-    <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -21,7 +20,6 @@
             }
         }
     </script>
-    <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         ::-webkit-scrollbar { width: 8px; }
@@ -43,7 +41,6 @@
 </head>
 <body class="bg-darkBg text-gray-200 font-sans min-h-screen flex flex-col justify-between selection:bg-accentPink selection:text-black">
 
-    <!-- Navbar -->
     <nav class="glass-nav fixed top-0 w-full z-50 transition-all duration-300">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex items-center justify-between h-16">
@@ -53,7 +50,7 @@
 
                 <div class="hidden md:flex items-center space-x-8">
                     <button onclick="navigateTo('home')" class="hover:text-accentPink font-medium transition">Home</button>
-                    <button onclick="navigateTo('browse')" class="hover:text-accentPink font-medium transition">Browse</button>
+                    <button onclick="navigateTo('browse')" class="hover:text-accentPink font-medium transition">Browse All</button>
                     <button onclick="navigateTo('library')" class="hover:text-accentPink font-medium transition">My Library</button>
                 </div>
 
@@ -72,10 +69,9 @@
             </div>
         </div>
 
-        <!-- Mobile Menu -->
         <div id="mobileMenu" class="hidden md:hidden bg-cardBg border-b border-gray-800 px-4 pt-2 pb-4 space-y-3">
             <button onclick="navigateTo('home'); toggleMobileMenu()" class="block w-full text-left py-2 hover:text-accentPink font-medium">Home</button>
-            <button onclick="navigateTo('browse'); toggleMobileMenu()" class="block w-full text-left py-2 hover:text-accentPink font-medium">Browse</button>
+            <button onclick="navigateTo('browse'); toggleMobileMenu()" class="block w-full text-left py-2 hover:text-accentPink font-medium">Browse All</button>
             <button onclick="navigateTo('library'); toggleMobileMenu()" class="block w-full text-left py-2 hover:text-accentPink font-medium">My Library</button>
             <div class="relative w-full pt-2">
                 <input type="text" id="mobileSearchInput" onkeydown="handleSearch(event, true)" placeholder="Search anime..." class="w-full bg-hoverBg text-sm text-white rounded-full py-2 pl-4 pr-10 focus:outline-none focus:ring-2 focus:ring-accentPink border border-gray-800">
@@ -86,23 +82,19 @@
         </div>
     </nav>
 
-    <!-- Main Dynamic Content Wrapper -->
     <main id="app" class="pt-20 pb-12 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto w-full flex-grow">
     </main>
 
-    <!-- Footer -->
     <footer class="bg-cardBg border-t border-gray-800/60 py-6 text-center text-xs text-gray-500">
-        <p>&copy; 2026 TRIANIME. Powered by Jikan v4 & Public Embed Engine.</p>
+        <p>&copy; 2026 TRIANIME. Powered by Jikan v4 & Embed Engine.</p>
     </footer>
 
     <script>
         // --- CONSTANTS & APIS ---
         const JIKAN_BASE = 'https://api.jikan.moe/v4';
-        const CONSUMET_BASE = 'https://api.consumet.org/anime/gogoanime'; // Open Source Scraper Endpoint
         const EMBED_PROVIDERS = [
-            { name: 'Server 1 (Auto-Embed)', url: (id, ep) => `https://vidsrc.to/embed/anime/${id}/${ep}` },
-            { name: 'Server 2 (2Embed)', url: (id, ep) => `https://2embed.org/embed/anime/${id}/${ep}` },
-            { name: 'Trailer (YouTube)', url: (trailerUrl) => trailerUrl }
+            { name: 'Server 1', url: (id, ep) => `https://vidsrc.to/embed/anime/${id}/${ep}` },
+            { name: 'Server 2', url: (id, ep) => `https://2embed.org/embed/anime/${id}/${ep}` }
         ];
 
         const HARDCODED_GENRES = [
@@ -113,7 +105,7 @@
             { id: 36, name: 'Slice of Life' }, { id: 37, name: 'Supernatural' }
         ];
 
-        // --- STATE & LOCAL STORAGE ---
+        // --- STATE MANAGEMENT ---
         const state = {
             view: 'home',
             heroAnime: [],
@@ -124,6 +116,8 @@
             browseData: [],
             browsePage: 1,
             browseFilter: { type: 'top', genre: null },
+            isLoadingMore: false,
+            hasMorePages: true,
             watchAnime: null,
             selectedEpisode: 1,
             selectedServer: 0,
@@ -160,13 +154,14 @@
             }
             state.heroAnime = topAiring || [];
 
-            const latest = await fetchAPI('/seasons/now?limit=12');
+            const latest = await fetchAPI('/seasons/now?limit=24');
             await delay(800);
             state.latestAiring = latest || state.heroAnime;
 
             const upcoming = await fetchAPI('/seasons/upcoming?limit=6');
             state.upcoming = upcoming || [];
 
+            setupInfiniteScroll();
             navigateTo('home');
         }
 
@@ -176,7 +171,7 @@
             clearInterval(state.heroTimer);
 
             if (view === 'home') renderHome();
-            else if (view === 'browse') loadBrowseData(params.page || 1, params.filter || state.browseFilter);
+            else if (view === 'browse') resetAndLoadBrowse(params.filter || state.browseFilter);
             else if (view === 'watch') loadWatchPage(params.id);
             else if (view === 'search') loadSearchResults(params.query);
             else if (view === 'library') renderLibrary();
@@ -188,7 +183,7 @@
             document.getElementById('app').innerHTML = `
                 <div class="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
                     <div class="w-12 h-12 border-4 border-accentPink border-t-transparent rounded-full animate-spin"></div>
-                    <p class="text-gray-400 font-medium tracking-wide animate-pulse">Loading TRIANIME...</p>
+                    <p class="text-gray-400 font-medium tracking-wide animate-pulse">Loading TRIANIME Library...</p>
                 </div>
             `;
         }
@@ -203,8 +198,8 @@
                     <div class="grid grid-cols-1 lg:grid-cols-4 gap-8">
                         <div class="lg:col-span-3 space-y-6">
                             <div class="flex justify-between items-center border-l-4 border-accentPink pl-3">
-                                <h2 class="text-xl font-bold tracking-wide">Latest Airing</h2>
-                                <button onclick="navigateTo('browse')" class="text-xs text-accentPink hover:underline">View All</button>
+                                <h2 class="text-xl font-bold tracking-wide">Currently Airing Season</h2>
+                                <button onclick="navigateTo('browse')" class="text-xs text-accentPink hover:underline">View Entire Catalog</button>
                             </div>
                             <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
                                 ${state.latestAiring.map(anime => renderAnimeCard(anime)).join('')}
@@ -273,47 +268,85 @@
             state.heroTimer = setInterval(updateHero, 5000);
         }
 
-        // --- BROWSE VIEW ---
-        async function loadBrowseData(page = 1, filter = { type: 'top', genre: null }) {
-            renderLoading();
-            state.browsePage = page;
+        // --- BROWSE VIEW WITH AUTO-POPULATING INFINITE SCROLL ---
+        async function resetAndLoadBrowse(filter = { type: 'top', genre: null }) {
+            state.browsePage = 1;
+            state.browseData = [];
             state.browseFilter = filter;
+            state.hasMorePages = true;
 
-            let endpoint = `/top/anime?page=${page}`;
-            if (filter.genre) {
-                endpoint = `/anime?genres=${filter.genre}&page=${page}&order_by=score&sort=desc`;
-            } else if (filter.type === 'movie') {
-                endpoint = `/top/anime?type=movie&page=${page}`;
-            }
+            renderBrowseShell();
+            await fetchNextBrowseBatch();
+        }
 
-            const data = await fetchAPI(endpoint);
-            state.browseData = data || [];
-
+        function renderBrowseShell() {
+            const filter = state.browseFilter;
             const app = document.getElementById('app');
             app.innerHTML = `
                 <div class="fade-in space-y-6">
                     <div class="flex flex-wrap items-center justify-between gap-4 bg-cardBg p-4 rounded-xl border border-gray-800">
-                        <h2 class="text-xl font-bold border-l-4 border-accentPink pl-3">Browse Library</h2>
+                        <h2 class="text-xl font-bold border-l-4 border-accentPink pl-3">Complete Library</h2>
                         <div class="flex flex-wrap gap-2">
-                            <button onclick="loadBrowseData(1, { type: 'top', genre: null })" class="px-3 py-1.5 rounded-lg text-xs font-semibold ${!filter.genre && filter.type==='top' ? 'bg-accentPink text-black' : 'bg-hoverBg hover:text-accentPink'}">Top Rated</button>
-                            <button onclick="loadBrowseData(1, { type: 'movie', genre: null })" class="px-3 py-1.5 rounded-lg text-xs font-semibold ${filter.type==='movie' ? 'bg-accentPink text-black' : 'bg-hoverBg hover:text-accentPink'}">Movies</button>
+                            <button onclick="resetAndLoadBrowse({ type: 'top', genre: null })" class="px-3 py-1.5 rounded-lg text-xs font-semibold ${!filter.genre && filter.type==='top' ? 'bg-accentPink text-black' : 'bg-hoverBg hover:text-accentPink'}">Top Rated</button>
+                            <button onclick="resetAndLoadBrowse({ type: 'movie', genre: null })" class="px-3 py-1.5 rounded-lg text-xs font-semibold ${filter.type==='movie' ? 'bg-accentPink text-black' : 'bg-hoverBg hover:text-accentPink'}">Movies</button>
                             ${HARDCODED_GENRES.map(g => `
-                                <button onclick="loadBrowseData(1, { type: 'genre', genre: ${g.id} })" class="px-3 py-1.5 rounded-lg text-xs font-semibold ${filter.genre === g.id ? 'bg-accentPink text-black' : 'bg-hoverBg hover:text-accentPink'}">${g.name}</button>
+                                <button onclick="resetAndLoadBrowse({ type: 'genre', genre: ${g.id} })" class="px-3 py-1.5 rounded-lg text-xs font-semibold ${filter.genre === g.id ? 'bg-accentPink text-black' : 'bg-hoverBg hover:text-accentPink'}">${g.name}</button>
                             `).join('')}
                         </div>
                     </div>
 
-                    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                        ${state.browseData.map(anime => renderAnimeCard(anime)).join('')}
-                    </div>
+                    <div id="browseGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                        </div>
 
-                    <div class="flex justify-center items-center space-x-4 pt-6">
-                        <button onclick="loadBrowseData(${Math.max(1, page - 1)}, state.browseFilter)" ${page === 1 ? 'disabled class="opacity-50 cursor-not-allowed"' : ''} class="bg-cardBg hover:bg-hoverBg border border-gray-800 px-4 py-2 rounded-lg text-sm">Previous</button>
-                        <span class="text-sm font-semibold">Page ${page}</span>
-                        <button onclick="loadBrowseData(${page + 1}, state.browseFilter)" class="bg-cardBg hover:bg-hoverBg border border-gray-800 px-4 py-2 rounded-lg text-sm">Next</button>
+                    <div id="scrollLoader" class="flex justify-center py-8">
+                        <div class="w-8 h-8 border-4 border-accentPink border-t-transparent rounded-full animate-spin"></div>
                     </div>
                 </div>
             `;
+        }
+
+        async function fetchNextBrowseBatch() {
+            if (state.isLoadingMore || !state.hasMorePages) return;
+            state.isLoadingMore = true;
+
+            const filter = state.browseFilter;
+            let endpoint = `/top/anime?page=${state.browsePage}`;
+            if (filter.genre) {
+                endpoint = `/anime?genres=${filter.genre}&page=${state.browsePage}&order_by=score&sort=desc`;
+            } else if (filter.type === 'movie') {
+                endpoint = `/top/anime?type=movie&page=${state.browsePage}`;
+            }
+
+            const data = await fetchAPI(endpoint);
+            if (data && data.length > 0) {
+                state.browseData.push(...data);
+                appendAnimeCards(data);
+                state.browsePage++;
+            } else {
+                state.hasMorePages = false;
+                const loader = document.getElementById('scrollLoader');
+                if (loader) loader.innerHTML = `<p class="text-xs text-gray-500">End of catalog reached.</p>`;
+            }
+
+            state.isLoadingMore = false;
+        }
+
+        function appendAnimeCards(items) {
+            const grid = document.getElementById('browseGrid');
+            if (!grid) return;
+            items.forEach(anime => {
+                grid.insertAdjacentHTML('beforeend', renderAnimeCard(anime));
+            });
+        }
+
+        function setupInfiniteScroll() {
+            window.addEventListener('scroll', () => {
+                if (state.view !== 'browse') return;
+                const { scrollTop, scrollHeight, clientHeight } = document.documentElement;
+                if (scrollTop + clientHeight >= scrollHeight - 600) {
+                    fetchNextBrowseBatch();
+                }
+            });
         }
 
         // --- WATCH VIEW ---
@@ -337,26 +370,17 @@
             const totalEpisodes = anime.episodes || 12;
             const isFav = state.favorites.some(f => f.mal_id === anime.mal_id);
 
-            let iframeSrc = '';
-            if (state.selectedServer === 0) {
-                iframeSrc = EMBED_PROVIDERS[0].url(anime.mal_id, state.selectedEpisode);
-            } else if (state.selectedServer === 1) {
-                iframeSrc = EMBED_PROVIDERS[1].url(anime.mal_id, state.selectedEpisode);
-            } else {
-                iframeSrc = anime.trailer?.embed_url || EMBED_PROVIDERS[0].url(anime.mal_id, state.selectedEpisode);
-            }
+            let iframeSrc = EMBED_PROVIDERS[state.selectedServer]?.url(anime.mal_id, state.selectedEpisode) || anime.trailer?.embed_url;
 
             const app = document.getElementById('app');
             app.innerHTML = `
                 <div class="fade-in space-y-8">
                     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                        <!-- Video Player Area -->
                         <div class="lg:col-span-2 space-y-4">
                             <div class="relative w-full aspect-video bg-black rounded-xl overflow-hidden border border-gray-800 shadow-xl">
                                 <iframe src="${iframeSrc}" class="w-full h-full border-0" allowfullscreen allow="autoplay"></iframe>
                             </div>
                             
-                            <!-- Controls / Server Switcher -->
                             <div class="flex flex-wrap items-center justify-between gap-4 bg-cardBg p-4 rounded-xl border border-gray-800">
                                 <div>
                                     <h1 class="text-xl font-bold text-white">${anime.title}</h1>
@@ -366,7 +390,7 @@
                                     <span class="text-xs text-gray-400 font-semibold mr-1">Server:</span>
                                     ${EMBED_PROVIDERS.map((s, idx) => `
                                         <button onclick="changeServer(${idx})" class="text-xs px-3 py-1.5 rounded-lg border ${state.selectedServer === idx ? 'bg-accentPink text-black font-bold border-accentPink' : 'bg-hoverBg border-gray-800 text-gray-300 hover:text-accentPink'}">
-                                            ${s.name.split(' ')[0]} ${idx+1}
+                                            ${s.name}
                                         </button>
                                     `).join('')}
                                     <button onclick="toggleFavorite()" class="ml-2 text-sm px-3 py-1.5 rounded-lg border ${isFav ? 'bg-red-500 text-white border-red-500' : 'bg-hoverBg text-gray-300 border-gray-800'}">
@@ -376,7 +400,6 @@
                             </div>
                         </div>
 
-                        <!-- Episode Selector -->
                         <div class="bg-cardBg border border-gray-800 rounded-xl p-4 flex flex-col h-[420px] lg:h-auto">
                             <h3 class="text-md font-bold mb-3 border-l-4 border-accentPink pl-3">Episodes (${totalEpisodes})</h3>
                             <div class="overflow-y-auto flex-grow space-y-2 pr-1">
@@ -390,7 +413,6 @@
                         </div>
                     </div>
 
-                    <!-- Metadata -->
                     <div class="bg-cardBg border border-gray-800 rounded-xl p-6 grid grid-cols-1 md:grid-cols-4 gap-6">
                         <img src="${anime.images.jpg.large_image_url}" class="w-full rounded-lg object-cover shadow-md">
                         <div class="md:col-span-3 space-y-4">
@@ -421,7 +443,6 @@
             renderWatchPage();
         }
 
-        // --- LOCAL STORAGE HELPERS ---
         function toggleFavorite() {
             const anime = state.watchAnime;
             const index = state.favorites.findIndex(f => f.mal_id === anime.mal_id);
@@ -450,11 +471,10 @@
                 type: anime.type,
                 timestamp: new Date().toLocaleDateString()
             });
-            state.history = filtered.slice(0, 24); // store last 24
+            state.history = filtered.slice(0, 24);
             localStorage.setItem('tri_history', JSON.stringify(state.history));
         }
 
-        // --- LIBRARY VIEW (FAVORITES & HISTORY) ---
         function renderLibrary() {
             const app = document.getElementById('app');
             app.innerHTML = `
@@ -478,13 +498,12 @@
             `;
         }
 
-        // --- SEARCH VIEW ---
         async function loadSearchResults(query) {
             if (!query) return;
             renderLoading();
             state.searchQuery = query;
 
-            const results = await fetchAPI(`/anime?q=${encodeURIComponent(query)}&limit=18`);
+            const results = await fetchAPI(`/anime?q=${encodeURIComponent(query)}&limit=24`);
             state.searchResults = results || [];
 
             const app = document.getElementById('app');
