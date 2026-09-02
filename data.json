@@ -1,0 +1,54 @@
+{
+  "lastUpdated": "2026-09-03T01:20:00.000Z",
+  "total": 6,
+  "data": [
+    {
+      "id": 52991,
+      "title": "Sousou no Frieren",
+      "image": "https://cdn.myanimelist.net/images/anime/1015/138006l.jpg",
+      "score": 9.32,
+      "type": "TV",
+      "synopsis": "During their decade-long quest to defeat the Demon King, the members of the hero's party—mage Frieren, hero Himmel, priest Heiter, and warrior Eisen—forged bonds through adventures and battles. Upon their return, Frieren promises to visit them again in 50 years."
+    },
+    {
+      "id": 5114,
+      "title": "Fullmetal Alchemist: Brotherhood",
+      "image": "https://cdn.myanimelist.net/images/anime/1208/94745l.jpg",
+      "score": 9.10,
+      "type": "TV",
+      "synopsis": "After a horrific alchemy experiment goes wrong in the Elric household, brothers Edward and Alphonse are left in a catastrophic new reality. Edward loses his left leg and Alphonse his entire body."
+    },
+    {
+      "id": 9253,
+      "title": "Steins;Gate",
+      "image": "https://cdn.myanimelist.net/images/anime/1935/127974l.jpg",
+      "score": 9.07,
+      "type": "TV",
+      "synopsis": "Self-proclaimed mad scientist Rintaro Okabe rents out a room in a shaky old building in Akihabara, where he spends his days inventing prospective future gadgets with his fellow lab members."
+    },
+    {
+      "id": 28977,
+      "title": "Gintama°",
+      "image": "https://cdn.myanimelist.net/images/anime/3/72078l.jpg",
+      "score": 9.06,
+      "type": "TV",
+      "synopsis": "Gintoki, Shinpachi, and Kagura return as the eccentric Yorozuya crew, taking on odd jobs across an alien-invaded Edo period Japan."
+    },
+    {
+      "id": 11061,
+      "title": "Hunter x Hunter (2011)",
+      "image": "https://cdn.myanimelist.net/images/anime/1337/99013l.jpg",
+      "score": 9.04,
+      "type": "TV",
+      "synopsis": "Hunters devote themselves to accomplishing hazardous tasks, all from traversing the world's uncharted territories to locating rare items and monsters."
+    },
+    {
+      "id": 1535,
+      "title": "Death Note",
+      "image": "https://cdn.myanimelist.net/images/anime/9/9444l.jpg",
+      "score": 8.62,
+      "type": "TV",
+      "synopsis": "A high school prodigy discovers a supernatural notebook that grants the ability to kill anyone whose name is written in it."
+    }
+  ]
+}
