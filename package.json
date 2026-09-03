@@ -1,13 +1,22 @@
 {
-  "name": "free-media-streamer",
-  "version": "1.0.0",
-  "description": "Full-stack client and server streaming media using Consumet and Jikan APIs",
+  "name": "anime-stream-engine",
+  "version": "1.1.0",
+  "description": "Anime search + playback proxy (Jikan metadata + streaming provider proxy). Improved, secured, and cached.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
+  "keywords": ["anime", "streaming", "jikan", "consumet", "hls"],
+  "author": "star884",
+  "license": "MIT",
   "dependencies": {
     "axios": "^1.6.0",
-    "express": "^4.19.0"
+    "cors": "^2.8.5",
+    "dotenv": "^16.0.3",
+    "express": "^4.19.0",
+    "express-rate-limit": "^6.7.0",
+    "helmet": "^6.0.1",
+    "morgan": "^1.10.0",
+    "node-cache": "^5.1.2"
   }
 }
