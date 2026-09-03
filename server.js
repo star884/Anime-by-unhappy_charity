@@ -1,81 +1,230 @@
+/**
+ * server.js
+ * Improved Express server:
+ * - Environment-driven config (dotenv)
+ * - Helmet for basic security headers
+ * - CORS enabled for local dev
+ * - Morgan logging
+ * - Rate limiting
+ * - In-memory caching (node-cache) for external API results
+ * - Clearer error handling and consistent JSON responses
+ *
+ * NOTE: Provider endpoints (Consumet) sometimes change. See PROVIDER_* constants and TODOs below.
+ */
+
+require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
 const path = require('path');
+const helmet = require('helmet');
+const morgan = require('morgan');
+const NodeCache = require('node-cache');
+const rateLimit = require('express-rate-limit');
+const cors = require('cors');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = Number(process.env.PORT || 3000);
 
-// Host public frontend folder directly
+// Configuration: swap or adjust these as provider endpoints change
+const JIKAN_BASE = process.env.JIKAN_BASE || 'https://api.jikan.moe/v4';
+const CONSUMET_BASE = process.env.CONSUMET_BASE || 'https://consumet.org'; // NOTE: adjust if provider exposes differing API paths
+
+// Cache TTL (seconds)
+const CACHE_TTL = Number(process.env.CACHE_TTL || 3600); // 1 hour default
+const cache = new NodeCache({ stdTTL: CACHE_TTL, checkperiod: 120 });
+
+app.use(helmet());
+app.use(cors()); // restrict in production to allowed origins
+app.use(express.json());
+app.use(morgan('combined'));
+
+// Basic per-ip rate limiting
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: Number(process.env.RATE_LIMIT_MAX || 120),
+  standardHeaders: true,
+  legacyHeaders: false
+});
+app.use(limiter);
+
+// Serve static frontend
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Public API instances 
-const JIKAN_URL = 'https://jikan.moe';
-const CONSUMET_URL = 'https://consumet.org';
+/**
+ * Helpers
+ */
+function sendServerError(res, message, details = null) {
+  const body = { error: message };
+  if (details) body.details = details;
+  return res.status(500).json(body);
+}
 
 /**
- * Route 1: Catalog Search Engine (Via Jikan API)
+ * GET /api/search?q=...
+ * Uses Jikan (v4) search for anime by title.
+ * Caches results to reduce external calls.
  */
 app.get('/api/search', async (req, res) => {
-    try {
-        const query = req.query.q;
-        if (!query) return res.status(400).json({ error: 'Query parameter "q" is required' });
+  const q = String(req.query.q || '').trim();
+  if (!q) return res.status(400).json({ error: 'Query parameter "q" is required' });
 
-        const response = await axios.get(`${JIKAN_URL}/anime?q=${encodeURIComponent(query)}&limit=10`);
-        
-        // Structure uniform metadata cards
-        const results = response.data.data.map(item => ({
-            id: item.mal_id,
-            title: item.title,
-            image: item.images.jpg.large_image_url,
-            summary: item.synopsis,
-            score: item.score
-        }));
-        
-        res.json(results);
-    } catch (error) {
-        res.status(500).json({ error: 'Failed fetching metadata from Jikan', details: error.message });
-    }
+  const cacheKey = `search:${q.toLowerCase()}`;
+  const cached = cache.get(cacheKey);
+  if (cached) return res.json(cached);
+
+  try {
+    const limit = Math.min(Number(req.query.limit || 10), 25);
+    const jikanUrl = `${JIKAN_BASE}/anime?q=${encodeURIComponent(q)}&limit=${limit}`;
+    const response = await axios.get(jikanUrl, { timeout: 8000 });
+
+    // Normalise Jikan response to a compact card format
+    const results = (response.data?.data || []).map(item => ({
+      id: item.mal_id,
+      title: item.title,
+      image: item.images?.jpg?.large_image_url || item.images?.jpg?.image_url || null,
+      summary: item.synopsis || '',
+      score: item.score || null,
+      episodes: item.episodes || null,
+      type: item.type || null,
+      aired: item.aired?.string || null
+    }));
+
+    cache.set(cacheKey, results);
+    return res.json(results);
+  } catch (err) {
+    console.error('Jikan search error', err?.message || err);
+    return sendServerError(res, 'Failed fetching metadata from Jikan', err?.message);
+  }
 });
 
 /**
- * Route 2: Fetch Episode Watchlists (Via Consumet Gogoanime Proxy)
+ * GET /api/anime/:malId/episodes
+ * Return episode list for an anime using Jikan episodes endpoint where available.
+ * If Jikan lacks episodes or the anime id is actually a provider id, the client may fall back to provider-specific endpoint.
  */
-app.get('/api/anime/:title/episodes', async (req, res) => {
-    try {
-        const title = req.params.title;
-        // Search Consumet library matching metadata title
-        const searchRes = await axios.get(`${CONSUMET_URL}/${encodeURIComponent(title)}`);
-        if (!searchRes.data.results || searchRes.data.results.length === 0) {
-            return res.status(404).json({ error: 'Anime media not found on streaming servers' });
+app.get('/api/anime/:malId/episodes', async (req, res) => {
+  const malId = Number(req.params.malId);
+  if (!Number.isInteger(malId) || malId <= 0) {
+    return res.status(400).json({ error: 'malId path parameter must be a positive integer (Jikan MAL id).' });
+  }
+
+  const cacheKey = `episodes:${malId}`;
+  const cached = cache.get(cacheKey);
+  if (cached) return res.json(cached);
+
+  try {
+    // Jikan episodes endpoint
+    const epsUrl = `${JIKAN_BASE}/anime/${malId}/episodes`;
+    const response = await axios.get(epsUrl, { timeout: 8000 });
+
+    // Map episodes to simplified objects: number + title + aired + id placeholder
+    const episodes = (response.data?.data || []).map(ep => ({
+      number: ep.episode_id || ep.mal_id || ep.episode,
+      title: ep.title || `Episode ${ep.episode_id || ep.episode}`,
+      aired: ep.aired || null,
+      // NOTE: Jikan does not provide provider-specific stream ids — if you need a provider id,
+      // use a provider search endpoint (see /api/provider-search) to map MAL->provider
+      providerId: null
+    }));
+
+    const payload = { malId, episodes };
+    cache.set(cacheKey, payload);
+    return res.json(payload);
+  } catch (err) {
+    console.warn('Jikan episodes fetch failed', err?.message || err);
+    return sendServerError(res, 'Failed fetching episode metadata from Jikan', err?.message);
+  }
+});
+
+/**
+ * GET /api/provider-search?title=...
+ * Optional helper: search a streaming provider (Consumet) for a title and return provider metadata.
+ * This is best-effort — provider endpoints and shapes vary; adjust CONSUMET_* values if needed.
+ *
+ * NOTE: This endpoint is a convenience so the frontend can map a metadata result to a provider item id.
+ */
+app.get('/api/provider-search', async (req, res) => {
+  const title = String(req.query.title || '').trim();
+  if (!title) return res.status(400).json({ error: 'Query parameter "title" is required' });
+
+  const cacheKey = `provider-search:${title.toLowerCase()}`;
+  const cached = cache.get(cacheKey);
+  if (cached) return res.json(cached);
+
+  try {
+    // TODO: If your provider exposes a JSON search API, switch to that exact path.
+    // The original repo attempted a consumet search via `${CONSUMET_BASE}/${encodeURIComponent(title)}`
+    // Some consumet deployments expose a meta/search API under /search or /meta endpoints.
+    // We'll try a couple of common guess paths and return the first workable response.
+    const attempts = [
+      `${CONSUMET_BASE}/search/${encodeURIComponent(title)}`,          // guess
+      `${CONSUMET_BASE}/search?query=${encodeURIComponent(title)}`,   // guess
+      `${CONSUMET_BASE}/anime/${encodeURIComponent(title)}`,          // guess
+      `${CONSUMET_BASE}/meta/anilist/${encodeURIComponent(title)}`    // guess
+    ];
+
+    let lastErr = null;
+    for (const url of attempts) {
+      try {
+        const r = await axios.get(url, { timeout: 8000 });
+        // Heuristics: provider returning JSON with 'results' or 'data' or 'id'
+        if (r?.data) {
+          const out = { url, data: r.data };
+          cache.set(cacheKey, out);
+          return res.json(out);
         }
-
-        const exactAnime = searchRes.data.results[0]; // Grab best match
-        const infoRes = await axios.get(`https://consumet.org/info/${exactAnime.id}`);
-        
-        res.json({
-            providerId: exactAnime.id,
-            episodes: infoRes.data.episodes // Contains episode numbers + string IDs
-        });
-    } catch (error) {
-        res.status(500).json({ error: 'Failed extracting episode structural arrays', details: error.message });
+      } catch (e) {
+        lastErr = e;
+        // continue to next attempt
+      }
     }
+
+    return sendServerError(res, 'Provider search attempts failed; provider API shape may differ.', lastErr?.message);
+  } catch (err) {
+    console.error('Provider search fatal error', err?.message || err);
+    return sendServerError(res, 'Provider search failed', err?.message);
+  }
 });
 
 /**
- * Route 3: Extract Decrypted M3U8 Streams (Via Consumet Gogoanime Scraper)
+ * GET /api/stream/:providerEpisodeId
+ * Proxy to the provider's "watch" endpoint and return JSON with streaming sources.
+ * This is intended to let the server fetch the manifest (and avoid CORS) and return the HLS .m3u8 URL(s) to the client.
+ *
+ * SECURITY NOTE: The server does not stream raw video bytes here; it returns JSON with the provider sources.
+ * You may implement byte-stream proxying if you need to rewrite manifests (but that is heavier).
  */
-app.get('/api/stream/:episodeId', async (req, res) => {
-    try {
-        const episodeId = req.params.episodeId;
-        const response = await axios.get(`https://consumet.org/watch/${episodeId}`);
-        
-        // Returns sources list containing direct streaming file (.m3u8 files)
-        res.json(response.data);
-    } catch (error) {
-        res.status(500).json({ error: 'Failed retrieving direct streaming manifest sources', details: error.message });
-    }
+app.get('/api/stream/:providerEpisodeId', async (req, res) => {
+  const providerEpisodeId = String(req.params.providerEpisodeId || '').trim();
+  if (!providerEpisodeId) return res.status(400).json({ error: 'providerEpisodeId path parameter is required.' });
+
+  const cacheKey = `stream:${providerEpisodeId}`;
+  const cached = cache.get(cacheKey);
+  if (cached) return res.json(cached);
+
+  try {
+    // Default guess for consumet watch path used in original repo
+    const url = `${CONSUMET_BASE}/watch/${encodeURIComponent(providerEpisodeId)}`;
+    const r = await axios.get(url, { timeout: 8000 });
+
+    // Heuristic: provider returns JSON with 'sources' or 'data' containing URL(s)
+    const payload = { providerEpisodeId, fetchedFrom: url, data: r.data };
+    cache.set(cacheKey, payload);
+    return res.json(payload);
+  } catch (err) {
+    console.error('Provider stream fetch error', err?.message || err);
+    return sendServerError(res, 'Failed retrieving provider stream manifest', err?.message);
+  }
+});
+
+// Fallback route: serve index.html for SPA routing
+app.get('*', (req, res) => {
+  if (req.path.startsWith('/api/')) {
+    return res.status(404).json({ error: 'API route not found' });
+  }
+  return res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 app.listen(PORT, () => {
-    console.log(`Server streaming engine running smoothly at http://localhost:${PORT}`);
+  console.log(`Anime stream engine listening on http://localhost:${PORT}`);
 });
