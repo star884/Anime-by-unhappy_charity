@@ -1,17 +1,3 @@
-/**
- * server.js
- * Improved Express server:
- * - Environment-driven config (dotenv)
- * - Helmet for basic security headers
- * - CORS enabled for local dev
- * - Morgan logging
- * - Rate limiting
- * - In-memory caching (node-cache) for external API results
- * - Clearer error handling and consistent JSON responses
- *
- * NOTE: Provider endpoints (Consumet) sometimes change. See PROVIDER_* constants and TODOs below.
- */
-
 require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
