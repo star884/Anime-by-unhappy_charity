@@ -1,45 +1,67 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Anime Streamer</title>
-    <style>
-        body { font-family: sans-serif; background: #121212; color: #fff; padding: 20px; text-align: center; }
-        .search-box { margin-bottom: 30px; }
-        input { padding: 10px; width: 60%; max-width: 400px; border: none; border-radius: 4px; }
-        button { padding: 10px 20px; background: #ff4757; color: white; border: none; border-radius: 4px; cursor: pointer; }
-        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px; margin-top: 20px; }
-        .card { background: #1e1e1e; padding: 15px; border-radius: 8px; cursor: pointer; transition: transform 0.2s; }
-        .card:hover { transform: scale(1.05); }
-        .card img { width: 100%; height: 280px; object-fit: cover; border-radius: 6px; }
-        #player-wrapper { display: none; margin: 20px auto; max-width: 720px; background: #1e1e1e; padding: 20px; border-radius: 8px; }
-        video { width: 100%; aspect-ratio: 16/9; background: black; }
-        #episode-list { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 15px; }
-        .ep-btn { background: #ff4757; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; }
-    </style>
-    <!-- Core HLS Engine Link -->
-    <script src="https://jsdelivr.net"></script>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Anime Stream Engine</title>
+  <style>
+    :root {
+      --bg: #0f0f12;
+      --card: #1b1b1f;
+      --accent: #ff4757;
+      --muted: #9aa0a6;
+      --glass: rgba(255,255,255,0.03);
+    }
+    html,body { height:100%; margin:0; font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; background: linear-gradient(180deg,#0c0c0f 0%, #0f1113 100%); color:#edf2f7; }
+    .container { max-width:1100px; margin:24px auto; padding: 0 20px; }
+    header { text-align:center; margin-bottom:18px; }
+    h1 { margin:8px 0; font-size:1.6rem; letter-spacing:0.2px; }
+    .search { display:flex; gap:8px; justify-content:center; margin:16px 0; }
+    .search input { width:60%; max-width:520px; padding:12px 14px; border-radius:8px; border:1px solid rgba(255,255,255,0.04); background:var(--glass); color:inherit; outline:none; }
+    .search button { padding:12px 18px; border-radius:8px; border:0; background:var(--accent); color:white; cursor:pointer; }
+    .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap:18px; margin-top:20px; }
+    .card { background:var(--card); border-radius:10px; padding:12px; overflow:hidden; transition: transform .14s ease, box-shadow .14s ease; cursor:pointer; display:flex; flex-direction:column; }
+    .card:hover { transform: translateY(-6px); box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+    .poster { width:100%; height:300px; object-fit:cover; border-radius:8px; background:#0b0b0b; }
+    .meta { margin-top:10px; display:flex; gap:8px; align-items:center; justify-content:space-between; }
+    .title { font-size:1rem; font-weight:600; margin:0; }
+    .score { font-weight:700; color:var(--accent); }
+    .summary { margin-top:8px; font-size:0.86rem; color:var(--muted); height:48px; overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; }
+    #player-panel { display:none; margin:24px auto; background:var(--card); padding:16px; border-radius:12px; max-width:900px; }
+    video { width:100%; border-radius:8px; background:black; }
+    .episodes { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+    .ep-btn { background:transparent; border:1px solid rgba(255,255,255,0.06); padding:8px 10px; border-radius:8px; color:#fff; cursor:pointer; }
+    .disabled { opacity:0.5; pointer-events:none; }
+    .center { text-align:center; color:var(--muted); margin-top:18px; }
+    small.note { color:var(--muted); display:block; margin-top:8px; }
+  </style>
+
+  <!-- HLS.js (client side). Using CDN for convenience. -->
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
 </head>
 <body>
+  <div class="container">
+    <header>
+      <h1>🌌 Anime Stream Engine</h1>
+      <small class="note">Search anime metadata and play HLS streams. This is a demo/proxy — treat streaming sources responsibly.</small>
+    </header>
 
-    <h1>🌌 Anime Stream Engine</h1>
-    
-    <div class="search-box">
-        <input type="text" id="search-input" placeholder="Enter anime title...">
-        <button onclick="searchAnime()">Search</button>
+    <div class="search" role="search" aria-label="Search anime">
+      <input id="search-input" placeholder="Enter anime title..." aria-label="Search anime by title" />
+      <button id="search-btn">Search</button>
     </div>
 
-    <!-- Active Video Component Container -->
-    <div id="player-wrapper">
-        <h2 id="playing-title">Select an Episode</h2>
-        <video id="video-player" controls autocomplete="off"></video>
-        <div id="episode-list"></div>
+    <div id="player-panel" aria-live="polite">
+      <h2 id="playing-title">Select an episode to play</h2>
+      <video id="video-player" controls playsinline></video>
+      <div class="episodes" id="episode-list" aria-label="Episode list"></div>
     </div>
 
-    <!-- Results Placement Target Layout -->
-    <div class="grid" id="catalog-grid"></div>
+    <div id="catalog" class="grid" aria-live="polite"></div>
 
-    <script src="app.js"></script>
+    <div id="feedback" class="center"></div>
+  </div>
+
+  <script src="app.js"></script>
 </body>
-</html>
+      </html>
