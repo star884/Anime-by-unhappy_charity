@@ -7,6 +7,9 @@ const morgan = require('morgan');
 const NodeCache = require('node-cache');
 const rateLimit = require('express-rate-limit');
 const cors = require('cors');
+const dns = require('dns');
+const http = require('http');
+const https = require('https');
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
@@ -37,6 +40,30 @@ app.use(limiter);
 app.use(express.static(path.join(__dirname, 'public')));
 
 /**
+ * Force IPv4 lookups for outgoing requests to avoid environments where IPv6 is unroutable.
+ * Many hosting providers have misconfigured IPv6 or no IPv6 connectivity which can cause
+ * `ENETUNREACH` or `ETIMEDOUT` when DNS resolves to IPv6 addresses. We create custom
+ * http/https agents that use dns.lookup with family:4.
+ */
+function lookupIpv4(hostname, options, callback) {
+  // dns.lookup signature: (hostname, options, callback)
+  // We ignore the incoming options and force family:4
+  return dns.lookup(hostname, { family: 4 }, callback);
+}
+
+const httpAgent = new http.Agent({ keepAlive: true, lookup: lookupIpv4 });
+const httpsAgent = new https.Agent({ keepAlive: true, lookup: lookupIpv4 });
+
+// Create an axios instance that uses the IPv4-forcing agents and a reasonable timeout
+const axiosInstance = axios.create({
+  timeout: 10000,
+  httpAgent,
+  httpsAgent,
+  // Do not follow redirects too many times
+  maxRedirects: 5
+});
+
+/**
  * Helpers
  */
 function sendServerError(res, message, details = null) {
@@ -61,7 +88,7 @@ app.get('/api/search', async (req, res) => {
   try {
     const limit = Math.min(Number(req.query.limit || 10), 25);
     const jikanUrl = `${JIKAN_BASE}/anime?q=${encodeURIComponent(q)}&limit=${limit}`;
-    const response = await axios.get(jikanUrl, { timeout: 8000 });
+    const response = await axiosInstance.get(jikanUrl);
 
     // Normalise Jikan response to a compact card format
     const results = (response.data?.data || []).map(item => ({
@@ -78,8 +105,10 @@ app.get('/api/search', async (req, res) => {
     cache.set(cacheKey, results);
     return res.json(results);
   } catch (err) {
+    // If the error looks like an IPv6/unreachable error, provide a helpful hint in the logs
     console.error('Jikan search error', err?.message || err);
-    return sendServerError(res, 'Failed fetching metadata from Jikan', err?.message);
+    // Provide a 502 with actionable message for the client
+    return res.status(502).json({ error: 'Upstream metadata service unreachable', details: err?.message });
   }
 });
 
@@ -101,7 +130,7 @@ app.get('/api/anime/:malId/episodes', async (req, res) => {
   try {
     // Jikan episodes endpoint
     const epsUrl = `${JIKAN_BASE}/anime/${malId}/episodes`;
-    const response = await axios.get(epsUrl, { timeout: 8000 });
+    const response = await axiosInstance.get(epsUrl);
 
     // Map episodes to simplified objects: number + title + aired + id placeholder
     const episodes = (response.data?.data || []).map(ep => ({
@@ -118,7 +147,7 @@ app.get('/api/anime/:malId/episodes', async (req, res) => {
     return res.json(payload);
   } catch (err) {
     console.warn('Jikan episodes fetch failed', err?.message || err);
-    return sendServerError(res, 'Failed fetching episode metadata from Jikan', err?.message);
+    return res.status(502).json({ error: 'Upstream metadata service unreachable', details: err?.message });
   }
 });
 
@@ -139,21 +168,17 @@ app.get('/api/provider-search', async (req, res) => {
 
   try {
     // TODO: If your provider exposes a JSON search API, switch to that exact path.
-    // The original repo attempted a consumet search via `${CONSUMET_BASE}/${encodeURIComponent(title)}`
-    // Some consumet deployments expose a meta/search API under /search or /meta endpoints.
-    // We'll try a couple of common guess paths and return the first workable response.
     const attempts = [
-      `${CONSUMET_BASE}/search/${encodeURIComponent(title)}`,          // guess
-      `${CONSUMET_BASE}/search?query=${encodeURIComponent(title)}`,   // guess
-      `${CONSUMET_BASE}/anime/${encodeURIComponent(title)}`,          // guess
-      `${CONSUMET_BASE}/meta/anilist/${encodeURIComponent(title)}`    // guess
+      `${CONSUMET_BASE}/search/${encodeURIComponent(title)}`,
+      `${CONSUMET_BASE}/search?query=${encodeURIComponent(title)}`,
+      `${CONSUMET_BASE}/anime/${encodeURIComponent(title)}`,
+      `${CONSUMET_BASE}/meta/anilist/${encodeURIComponent(title)}`
     ];
 
     let lastErr = null;
     for (const url of attempts) {
       try {
-        const r = await axios.get(url, { timeout: 8000 });
-        // Heuristics: provider returning JSON with 'results' or 'data' or 'id'
+        const r = await axiosInstance.get(url);
         if (r?.data) {
           const out = { url, data: r.data };
           cache.set(cacheKey, out);
@@ -161,14 +186,13 @@ app.get('/api/provider-search', async (req, res) => {
         }
       } catch (e) {
         lastErr = e;
-        // continue to next attempt
       }
     }
 
-    return sendServerError(res, 'Provider search attempts failed; provider API shape may differ.', lastErr?.message);
+    return res.status(502).json({ error: 'Provider search attempts failed; provider API shape may differ.', details: lastErr?.message });
   } catch (err) {
     console.error('Provider search fatal error', err?.message || err);
-    return sendServerError(res, 'Provider search failed', err?.message);
+    return res.status(502).json({ error: 'Provider search failed', details: err?.message });
   }
 });
 
@@ -176,9 +200,6 @@ app.get('/api/provider-search', async (req, res) => {
  * GET /api/stream/:providerEpisodeId
  * Proxy to the provider's "watch" endpoint and return JSON with streaming sources.
  * This is intended to let the server fetch the manifest (and avoid CORS) and return the HLS .m3u8 URL(s) to the client.
- *
- * SECURITY NOTE: The server does not stream raw video bytes here; it returns JSON with the provider sources.
- * You may implement byte-stream proxying if you need to rewrite manifests (but that is heavier).
  */
 app.get('/api/stream/:providerEpisodeId', async (req, res) => {
   const providerEpisodeId = String(req.params.providerEpisodeId || '').trim();
@@ -189,17 +210,15 @@ app.get('/api/stream/:providerEpisodeId', async (req, res) => {
   if (cached) return res.json(cached);
 
   try {
-    // Default guess for consumet watch path used in original repo
     const url = `${CONSUMET_BASE}/watch/${encodeURIComponent(providerEpisodeId)}`;
-    const r = await axios.get(url, { timeout: 8000 });
+    const r = await axiosInstance.get(url);
 
-    // Heuristic: provider returns JSON with 'sources' or 'data' containing URL(s)
     const payload = { providerEpisodeId, fetchedFrom: url, data: r.data };
     cache.set(cacheKey, payload);
     return res.json(payload);
   } catch (err) {
     console.error('Provider stream fetch error', err?.message || err);
-    return sendServerError(res, 'Failed retrieving provider stream manifest', err?.message);
+    return res.status(502).json({ error: 'Failed retrieving provider stream manifest', details: err?.message });
   }
 });
 
